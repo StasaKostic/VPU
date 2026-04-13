@@ -22,6 +22,24 @@ filesets:
     - hw/gr-heep/gr_heep.sv
     file_type: systemVerilogSource
 
+  vermu_rtl:
+    depend:
+    - hw/vendor/vermu/rtl/include/cvxif_types_pkg.sv
+    - hw/vendor/vermu/rtl/include/obi_pkg.sv
+    - hw/vendor/vermu/rtl/include/rvv_instr_pkg.sv
+    - hw/vendor/vermu/rtl/include/utils_macros.sv
+    - hw/vendor/vermu/rtl/include/vector_ops_pkg.sv
+    - hw/vendor/vermu/rtl/include/vpu_pkg.sv
+    files:
+    - hw/vendor/vermu/rtl/instr_decoder.sv
+    - hw/vendor/vermu/rtl/load_store_unit_mis.sv
+    - hw/vendor/vermu/rtl/obi_lsu_top.sv
+    - hw/vendor/vermu/rtl/simd_controller.sv
+    - hw/vendor/vermu/rtl/VAU.sv
+    - hw/vendor/vermu/rtl/VAU_lanes.sv
+    - hw/vendor/vermu/rtl/vregfile.sv
+    - hw/vendor/vermu/rtl/vpu_top.sv
+
   # Simulation
   files_verilator_waiver:
     files:
