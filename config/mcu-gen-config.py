@@ -11,6 +11,7 @@ from x_heep_gen.cpu.cpu import CPU
 from x_heep_gen.bus_type import BusType
 from x_heep_gen.memory_ss.memory_ss import MemorySS
 from x_heep_gen.memory_ss.linker_section import LinkerSection
+from x_heep_gen.cv_x_if import CvXIf
 from x_heep_gen.peripherals.base_peripherals import (
     SOC_ctrl,
     Bootrom,
@@ -44,8 +45,18 @@ def config():
     # Parallel bus
     system = XHeep(BusType.NtoM)
 
-    # Set cv32e40px CPU
-    system.set_cpu(CPU("cv32e40px"))
+    # Set cv32e20 CPU
+    system.set_cpu(CPU("cv32e20"))
+
+    system.set_xif(
+            CvXIf(
+                x_num_rs=2,  
+                x_id_width=1,
+                x_rfr_width=32,
+                x_rfw_width=32,
+                x_misa=0x0
+            )
+        )
 
     # Memory subsystem
     # - 2 x 32kiB firmware and data
@@ -114,7 +125,7 @@ def config():
 
 def gr_heep_config():
 
-    ext_xbar_nmasters = 0
+    ext_xbar_nmasters = 1
 
     # External slaves memory map
     ext_xbar_slaves = {
