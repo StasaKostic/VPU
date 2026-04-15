@@ -196,7 +196,7 @@ module gr_heep_peripherals (
   % endif
 
   % if (cpu.name == "cv32e20" and xif):
-     Example coprocessor CV-X-IF v1.0 compliant.
+    // Example coprocessor CV-X-IF v1.0 compliant.
      vpu_top #(
          .NrRgprPorts(cve2_pkg::X_NUM_RS),
          .XLEN(cve2_pkg::X_RFR_WIDTH),
