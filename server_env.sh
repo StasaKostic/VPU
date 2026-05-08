@@ -20,6 +20,9 @@ export MGLS_LICENSE_FILE=1717@edalicsrv.epfl.ch:16000@edalicsrv2.epfl.ch:16001@e
 export LM_LICENSE_FILE=16000@edalicsrv2.epfl.ch:16001@edalicsrv2.epfl.ch:16002@edalicsrv2.epfl.ch
 export SALT_LICENSE_SERVER=1717@edalicsrv.epfl.ch:16000@edalicsrv2.epfl.ch:16001@edalicsrv2.epfl.ch:16002@edalicsrv2.epfl.ch
 
+# ---- Activate virtual environment for X-Heep ----
+source /home/skostic/VPU/.venv/bin/activate
+
 echo "Environment loaded."
 echo "riscv32-unknown-elf-gcc -> $(command -v riscv32-unknown-elf-gcc || echo MISSING)"
 echo "vsim -> $(command -v vsim || echo MISSING)"
