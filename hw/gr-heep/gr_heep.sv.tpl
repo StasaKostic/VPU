@@ -13,6 +13,7 @@
     any_muxed_pads = xheep.get_padring().num_muxed_pads() > 0
     analog_signal_pads = [ pad for pad in xheep.get_padring().pad_list if any(isinstance(pin, Asignal) for pin in pad.pins) ]
     gr_heep = xheep.get_extension("gr-heep")
+    xif = xheep.xif()
 %>
 module gr_heep (
     // X-HEEP interface
@@ -138,7 +139,19 @@ module gr_heep (
   logic ext_debug_req;
   logic ext_debug_reset_n;
 
-  if_xif #(.X_NUM_RS(2)) ext_xif ();
+  // CORE-V eXtension Interface (CV-X-IF)
+  % if xif:
+    if_xif #(
+      .X_NUM_RS    (${xif.x_num_rs}),
+      .X_ID_WIDTH  (${xif.x_id_width}),
+      .X_MEM_WIDTH (${xif.x_mem_width}),
+      .X_RFR_WIDTH (${xif.x_rfr_width}),
+      .X_RFW_WIDTH (${xif.x_rfw_width}),
+      .X_MISA      (${xif.x_misa})
+    ) ext_xif ();
+  % else:
+    if_xif ext_xif (); // unused
+  % endif
 
   // CORE-V-MINI-MCU input/output pins
   % for pad in xheep.get_padring().pad_list:
@@ -195,12 +208,12 @@ module gr_heep (
     .xheep_instance_id_i ('0),
 
     // CORE-V eXtension Interface
-    .xif_compressed_if (ext_xif.cpu_compressed),
-    .xif_issue_if (ext_xif.cpu_issue),
-    .xif_commit_if (ext_xif.cpu_commit),
-    .xif_mem_if (ext_xif.cpu_mem),
-    .xif_mem_result_if (ext_xif.cpu_mem_result),
-    .xif_result_if (ext_xif.cpu_result),
+    .xif_compressed_if (ext_xif),
+    .xif_issue_if (ext_xif),
+    .xif_commit_if (ext_xif),
+    .xif_mem_if (ext_xif),
+    .xif_mem_result_if (ext_xif),
+    .xif_result_if (ext_xif),
 
     // Pad controller interface
     .pad_req_o  (pad_req),
@@ -312,31 +325,39 @@ module gr_heep (
   % endif
   assign ext_ao_peripheral_req = '0;
 
-  % if (gr_heep["periph_nslaves"] > 0):
+  % if (gr_heep["periph_nslaves"] > 0 or xif):
     gr_heep_peripherals gr_heep_peripherals_i (
       .clk_i(clk_in_x),
       .rst_ni(rst_nin_sync),
       % if (gr_heep["xbar_nmasters"] > 0):
         % if (gr_heep["xbar_nslaves"] > 0):
           .gr_heep_master_req_o(gr_heep_master_req),
-          .gr_heep_master_resp_i(gr_heep_master_resp)${'' if (gr_heep["xbar_nslaves"] + gr_heep["periph_nslaves"] + gr_heep["ext_interrupts"] == 0) else ','}
+          .gr_heep_master_resp_i(gr_heep_master_resp)${'' if ((gr_heep["xbar_nslaves"] + gr_heep["periph_nslaves"] + gr_heep["ext_interrupts"] == 0) and (xif is None)) else ','}
         % else:
           .gr_heep_master_req_o(heep_slave_req),
-          .gr_heep_master_resp_i(heep_slave_rsp)${'' if (gr_heep["xbar_nslaves"] + gr_heep["periph_nslaves"] + gr_heep["ext_interrupts"] == 0) else ','}
+          .gr_heep_master_resp_i(heep_slave_rsp)${'' if ((gr_heep["xbar_nslaves"] + gr_heep["periph_nslaves"] + gr_heep["ext_interrupts"] == 0) and (xif is None)) else ','}
         % endif
       % endif
       % if (gr_heep["xbar_nslaves"] > 0):
         .gr_heep_slave_req_i(gr_heep_slave_req),
-        .gr_heep_slave_resp_o(gr_heep_slave_resp)${'' if (gr_heep["periph_nslaves"] + gr_heep["ext_interrupts"] == 0) else ','}
+        .gr_heep_slave_resp_o(gr_heep_slave_resp)${'' if ((gr_heep["periph_nslaves"] + gr_heep["ext_interrupts"] == 0) and (xif is None)) else ','}
       % endif
       % if (gr_heep["periph_nslaves"] > 0):
         .gr_heep_peripheral_req_i(heep_peripheral_req),
-        .gr_heep_peripheral_rsp_o(heep_peripheral_rsp)${'' if (gr_heep["ext_interrupts"] == 0) else ','}
+        .gr_heep_peripheral_rsp_o(heep_peripheral_rsp)${'' if ((gr_heep["ext_interrupts"] == 0) and (xif is None)) else ','}
       % endif
       % if (gr_heep["ext_interrupts"] > 0):
         .gr_heep_peripheral_vec_int_o(ext_int_vector[${gr_heep["ext_interrupts"]-1}:0]),
-        .gr_heep_peripheral_int_o(intr_ext_peripheral)
+        .gr_heep_peripheral_int_o(intr_ext_peripheral)${'' if (xif is None) else ','}
       %endif
+      % if (xif):
+        .xif_compressed_if(ext_xif),
+        .xif_issue_if(ext_xif),
+        .xif_commit_if(ext_xif),
+        .xif_mem_if(ext_xif),
+        .xif_mem_result_if(ext_xif),
+        .xif_result_if(ext_xif)
+      % endif
     );
   % else:
     assign heep_peripheral_rsp = '0;

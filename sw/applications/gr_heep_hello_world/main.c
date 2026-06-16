@@ -1,5 +1,6 @@
 // System library headers
 #include <stdio.h>
+#include <stdint.h>
 
 // Custom library headers
 #include "gr_heep.h"

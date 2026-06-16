@@ -1,0 +1,10 @@
+{
+  name: "vermu"
+  target_dir: "vermu"
+
+  upstream: {
+    url: "https://github.com/des-cei/vermu.git"
+    rev: "3a854c37033c35c4ddcf256ec9bbf297f646bd20"
+  }
+
+}
