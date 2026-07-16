@@ -392,8 +392,8 @@ module gr_heep (
     .x_result_ready_i(ext_xif.coproc_result.result_ready),
     .x_result_o(ext_xif.coproc_result.result),
 
-    .obi_resp_t(gr_heep_master_resp_i),
-    .obi_req_t(gr_heep_master_req_o)
+    .masters_resp_i(gr_heep_master_resp_i),
+    .masters_req_o(gr_heep_master_req_o)
   );
 
   // Pad ring

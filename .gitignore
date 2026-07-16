@@ -27,3 +27,6 @@ transcript
 
 # Ctags
 tags
+
+# Vendor files
+hw/vendor/*
