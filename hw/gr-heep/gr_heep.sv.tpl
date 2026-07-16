@@ -375,27 +375,6 @@ module gr_heep (
   % endif
   assign exit_value_out_x = exit_value[0];
 
-  vpu_top vpu_top_i (
-    .clk_i(clk_in_x),
-    .rst_ni(rst_nin_sync),
-
-    .x_issue_valid_i(ext_xif.coproc_issue.issue_valid),
-    .x_issue_ready_o(ext_xif.coproc_issue.issue_ready),
-    .x_issue_req_i(ext_xif.coproc_issue.issue_req),
-    .x_issue_resp_o(ext_xif.coproc_issue.issue_resp),
-    .x_register_i(),
-    .x_register_valid_i(),
-    .x_register_ready_o(),
-    .x_commit_valid_i(ext_xif.coproc_commit.commit_valid),
-    .x_commit_i(ext_xif.coproc_commit.commit),
-    .x_result_valid_o(ext_xif.coproc_result.result_valid),
-    .x_result_ready_i(ext_xif.coproc_result.result_ready),
-    .x_result_o(ext_xif.coproc_result.result),
-
-    .masters_resp_i(gr_heep_master_resp_i),
-    .masters_req_o(gr_heep_master_req_o)
-  );
-
   // Pad ring
   // --------
   gr_heep_pad_ring gr_heep_pad_ring_i (
