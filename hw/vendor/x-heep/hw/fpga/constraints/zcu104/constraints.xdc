@@ -3,6 +3,9 @@ create_clock -add -name spi_slave_clk_pin -period 16.00 -waveform {0 8} [get_por
 
 # System clock and JTAG clock are unrelated
 #set_clock_groups -asynchronous -group [get_clocks clk_out1_xilinx_clk_wizard_clk_wiz_0_0] -group [get_clocks jtag_clk_pin]
+# Bound the crossings instead of ignoring them (same 20 ns limit as common/jtag.xdc)
+set_max_delay -datapath_only -from [get_clocks clk_out1_xilinx_clk_wizard_clk_wiz_0_0] -to [get_clocks jtag_clk_pin] 20.000
+set_max_delay -datapath_only -from [get_clocks jtag_clk_pin] -to [get_clocks clk_out1_xilinx_clk_wizard_clk_wiz_0_0] 20.000
 
 ### Reset Constraints
 set_false_path -from gr_heep_i/core_v_mini_mcu_i/debug_subsystem_i/dm_obi_top_i/i_dm_top/i_dm_csrs/dmcontrol_q_reg\[ndmreset\]/C
