@@ -25,7 +25,7 @@ package vpu_pkg;
     typedef logic [31:0] elen_t;    
     
     // Number of bits in a vector register (in each of 32 registers). Min 32. [STATIC]
-    localparam int unsigned VLEN   = 1024;
+    localparam int unsigned VLEN   = 256;
     
     typedef logic [VLEN-1:0] vlen_t;                    
 
