@@ -5,7 +5,6 @@ export RISCV_XHEEP="/home/stasa/CMOS2/tools/rv32imc_zve32x_zvl128b"
 export MODEL_TECH=/opt/altera_lite/25.1std/questa_fse/bin
 # Go to right directory and branch
 cd /home/stasa/CMOS2/repos/VPU
-git checkout updated-gr-heep
 # Generate HDL files out of templates
 make mcu-gen
 # Compile the application
