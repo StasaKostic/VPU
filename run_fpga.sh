@@ -1,6 +1,6 @@
 # Prerequisites: generate the bitstream using generate_bitstream.sh, and program the board with the bitstream and connect the board and the flash memory.
 
 # Compile the application
-make app PROJECT=rvv_matmul_bitwidth TARGET=zcu104 ARCH=rv32imc_zve32x_zvl128b LINKER=flash_load
+make app PROJECT=gemm16-b16 TARGET=zcu104 ARCH=rv32imc_zve32x_zvl64b LINKER=flash_load
 # Load the program to the flash
 make flash-prog
