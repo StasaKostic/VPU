@@ -57,6 +57,7 @@ module load_store_unit_mis
   output logic         store_err_o,
 
   output logic         busy_o,
+  output logic         wait_gnt_o,           // aligned request is waiting for its grant
 
   output logic         perf_load_o,
   output logic         perf_store_o
@@ -492,5 +493,8 @@ module load_store_unit_mis
   assign store_err_o   = data_or_pmp_err &  data_we_q & lsu_resp_valid_o;
 
   assign busy_o = (ls_fsm_cs != IDLE);
+  // WAIT_GNT keeps data_req_o high, but the address, we and wdata come straight from the inputs, so
+  // the requester must keep lsu_req_i and its operands stable until the grant (OBI requirement)
+  assign wait_gnt_o = (ls_fsm_cs == WAIT_GNT) & ~handle_misaligned_q;
 
 endmodule

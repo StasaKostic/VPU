@@ -28,7 +28,7 @@ module obi_lsu_top
     output obi_req_t masters_req_o
 );
 
-    logic lsu_we, lsu_req, addr_incr_req, lsu_busy, data_pmp_err;
+    logic lsu_we, lsu_req, addr_incr_req, lsu_busy, lsu_wait_gnt, lsu_can_req, data_pmp_err;
     logic vrf_rdata_done_q;
     logic lsu_resp_valid_q;
     logic [1:0] lsu_type;
@@ -78,6 +78,7 @@ module obi_lsu_top
         .load_err_o      (),
         .store_err_o     (),
         .busy_o          (lsu_busy),
+        .wait_gnt_o      (lsu_wait_gnt),
         .perf_load_o     (),
         .perf_store_o    ()
     );
@@ -87,6 +88,11 @@ module obi_lsu_top
     ///////////////////
 
     assign base_addr = vpu_req_i.rs1;
+
+    // A request may start when the LSU is idle, and must be held (same element, address, we and
+    // wdata) while the LSU waits for the grant: req_idx only advances on lsu_req && gnt, so dropping
+    // lsu_req there loses the grant, turns stores into reads and duplicates loaded elements
+    assign lsu_can_req = !lsu_busy || lsu_wait_gnt;
     
     // Address Generation
     always_comb begin
@@ -147,11 +153,11 @@ module obi_lsu_top
 
         if (vpu_req_i.mopcode == load_fp) begin
             lsu_we = 1'b0;
-            if (!lsu_busy && (active_req_idx < vl_i) && !buff_ready) begin  
+            if (lsu_can_req && (active_req_idx < vl_i) && !buff_ready) begin  
                 lsu_req = 1'b1; 
             end
         end  if (vpu_req_i.mopcode == store_fp) begin            
-            if (vrf_rdata_done_q && !lsu_busy && (active_req_idx < vl_i) && !buff_ready && state_was_busy_i) begin 
+            if (vrf_rdata_done_q && lsu_can_req && (active_req_idx < vl_i) && !buff_ready && state_was_busy_i) begin 
                 lsu_we =  1'b1; 
                 lsu_req = 1'b1; 
             end
@@ -199,7 +205,7 @@ module obi_lsu_top
                     vrf_wdata_o = int_buff;
                 end
         end else if (vpu_req_i.mopcode == store_fp) begin
-            if (vrf_rdata_done_q && !lsu_busy && (active_req_idx < vl_i) && !buff_ready && state_was_busy_i) begin
+            if (vrf_rdata_done_q && lsu_can_req && (active_req_idx < vl_i) && !buff_ready && state_was_busy_i) begin
                 unique case(vpu_req_i.width)
                     W_8:   lsu_wdata = {24'b0, int_buff[(active_req_idx* 8) +: 8]};   
                     W_16:  lsu_wdata = {16'b0, int_buff[(active_req_idx* 16) +: 16]}; 
