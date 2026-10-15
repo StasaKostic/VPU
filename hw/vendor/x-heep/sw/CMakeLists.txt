@@ -514,7 +514,7 @@ if((${LINKER} STREQUAL "flash_load") OR (${LINKER} STREQUAL "flash_exec"))
             COMMENT "Invoking: Hexdump")
 else()
     add_custom_command(TARGET ${MAINFILE}.elf POST_BUILD
-            COMMAND ${CMAKE_OBJCOPY} -O verilog  ${MAINFILE}.elf ${MAINFILE}.hex
+            COMMAND ${CMAKE_OBJCOPY} -O verilog --gap-fill 0 ${MAINFILE}.elf ${MAINFILE}.hex
             COMMENT "Invoking: Hexdump")
     add_custom_command(TARGET ${MAINFILE}.elf POST_BUILD
             COMMAND ${CMAKE_OBJCOPY} --srec-forceS3 --srec-len 1 -O srec ${MAINFILE}.elf ${MAINFILE}.hex.srec
