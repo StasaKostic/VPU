@@ -178,7 +178,9 @@ module dma
 `endif
 
 `else
-  assign clk_cg = clk_i & clk_gate_en_ni;
+  // No clock gating on FPGA: an AND gate in the clock path adds several ns of
+  // skew and causes hold violations (same as tc_clk_gating in tc_clk_xilinx.sv)
+  assign clk_cg = clk_i;
 `endif
 
   /* Registers */

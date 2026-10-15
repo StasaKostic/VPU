@@ -1,0 +1,15 @@
+diff --git a/hw/vendor/xheep_dma/rtl/dma.sv b/hw/vendor/xheep_dma/rtl/dma.sv
+index 12f112e..1bc4626 100644
+--- a/hw/vendor/xheep_dma/rtl/dma.sv
++++ b/hw/vendor/xheep_dma/rtl/dma.sv
+@@ -178,7 +178,9 @@ module dma
+ `endif
+ 
+ `else
+-  assign clk_cg = clk_i & clk_gate_en_ni;
++  // No clock gating on FPGA: an AND gate in the clock path adds several ns of
++  // skew and causes hold violations (same as tc_clk_gating in tc_clk_xilinx.sv)
++  assign clk_cg = clk_i;
+ `endif
+ 
+   /* Registers */
