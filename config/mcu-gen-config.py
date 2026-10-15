@@ -68,8 +68,8 @@ def config():
     memory_ss.add_ram_banks([32] * 2)
     memory_ss.add_ram_banks_il(4, 16, "data_interleaved")
     # Linker script sections
-    memory_ss.add_linker_section(LinkerSection.by_size("code", 0, 0x0000E800))
-    memory_ss.add_linker_section(LinkerSection("data", 0x0000E800, None))
+    memory_ss.add_linker_section(LinkerSection.by_size("code", 0, 0x00008000))
+    memory_ss.add_linker_section(LinkerSection("data", 0x00008000, None))
     system.set_memory_ss(memory_ss)
 
     # Peripheral domains initialization
