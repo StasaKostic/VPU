@@ -1,4 +1,4 @@
-// VERMU counterpart of the HEEPtor gemm16-b*-dp10-vwr4 applications.
+// VERMU counterpart of the HEEPtor gemm32-b*-dp8-vwr2 applications.
 // It computes the same GEMM on the same data as the HEEPtor version:
 //   C[m][n] = sum_k (A[m][k] * B[k][n]) >> (GEMM_INPUT_BITS - 1)
 // VERMU is a hard SIMD unit, so the inputs cannot stay packed at their exact
@@ -37,12 +37,13 @@ typedef int32_t acc_t;
 #define A_SCALE_SHIFT (INPUT_WIDTH + 1 - GEMM_INPUT_BITS)
 #define HALF_SIZE     (GEMM_SIZE / 2)
 
-// At VLEN=32 a vector holds 2 e16 or 1 e32 column pair, so every row of C is
+// At VLEN=64 a vector holds 4 e16 or 2 e32 column pairs, so every row of C is
 // computed in HALF_SIZE / VEC_ELEMS strips.
-#define VLEN_BITS     32
+#define VLEN_BITS     64
 #define VEC_ELEMS     (VLEN_BITS / (2 * INPUT_WIDTH))
-// Rows of C computed together, so each loaded B strip is reused.
-#define ROW_BLOCK     2
+// Rows of C computed together, so each loaded B strip is reused: one
+// accumulator per row in the 4 registers left after the B strip and product.
+#define ROW_BLOCK     4
 _Static_assert(HALF_SIZE % VEC_ELEMS == 0, "strips must tile the column pairs");
 _Static_assert(GEMM_SIZE % ROW_BLOCK == 0, "row blocks must tile C");
 
@@ -74,12 +75,12 @@ static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_scalar(
     }
 }
 
-// The kernel may use only the vector registers v0..v3, so it is written in
+// The kernel may use only the vector registers v0..v5, so it is written in
 // inline assembly with fixed registers instead of intrinsics, whose register
 // allocation GCC is free to choose. The registers keep their values from one
 // asm statement to the next: the function has no intrinsics and is not
 // autovectorized, so GCC emits no vector instructions of its own in between.
-//   v0: B strip   v1: product   v2, v3: accumulators of rows m and m + 1
+//   v0: B strip   v1: product   v2..v5: accumulators of rows m..m + 3
 static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_vfu(
     const gemm_input_t *a, const gemm_input_t *b, acc_t *c_even, acc_t *c_odd)
 {
@@ -106,26 +107,38 @@ static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_vfu(
             for (unsigned m = 0; m < GEMM_SIZE; m += ROW_BLOCK) {
                 const int32_t *a0 = &a_scaled[m * GEMM_SIZE];
                 const int32_t *a1 = a0 + GEMM_SIZE;
+                const int32_t *a2 = a1 + GEMM_SIZE;
+                const int32_t *a3 = a2 + GEMM_SIZE;
                 const acc_t *b_k = &b_half[j];
                 // The first k sets the accumulators and the next ones add to them.
                 asm volatile(VLE " v0, (%0)\n\t"
                              "vmulh.vx v2, v0, %1\n\t"
-                             "vmulh.vx v3, v0, %2"
-                             :: "r"(b_k), "r"(a0[0]), "r"(a1[0])
-                             : "v0", "v2", "v3", "memory");
+                             "vmulh.vx v3, v0, %2\n\t"
+                             "vmulh.vx v4, v0, %3\n\t"
+                             "vmulh.vx v5, v0, %4"
+                             :: "r"(b_k), "r"(a0[0]), "r"(a1[0]), "r"(a2[0]), "r"(a3[0])
+                             : "v0", "v2", "v3", "v4", "v5", "memory");
                 for (unsigned k = 1; k < GEMM_SIZE; ++k) {
                     b_k += HALF_SIZE;
                     asm volatile(VLE " v0, (%0)\n\t"
                                  "vmulh.vx v1, v0, %1\n\t"
                                  "vadd.vv v2, v2, v1\n\t"
                                  "vmulh.vx v1, v0, %2\n\t"
-                                 "vadd.vv v3, v3, v1"
-                                 :: "r"(b_k), "r"(a0[k]), "r"(a1[k])
-                                 : "v0", "v1", "v2", "v3", "memory");
+                                 "vadd.vv v3, v3, v1\n\t"
+                                 "vmulh.vx v1, v0, %3\n\t"
+                                 "vadd.vv v4, v4, v1\n\t"
+                                 "vmulh.vx v1, v0, %4\n\t"
+                                 "vadd.vv v5, v5, v1"
+                                 :: "r"(b_k), "r"(a0[k]), "r"(a1[k]), "r"(a2[k]), "r"(a3[k])
+                                 : "v0", "v1", "v2", "v3", "v4", "v5", "memory");
                 }
+                acc_t *c_m = &c[m * HALF_SIZE + j];
                 asm volatile(VSE " v2, (%0)\n\t"
-                             VSE " v3, (%1)"
-                             :: "r"(&c[m * HALF_SIZE + j]), "r"(&c[(m + 1) * HALF_SIZE + j])
+                             VSE " v3, (%1)\n\t"
+                             VSE " v4, (%2)\n\t"
+                             VSE " v5, (%3)"
+                             :: "r"(c_m), "r"(c_m + HALF_SIZE),
+                                "r"(c_m + 2 * HALF_SIZE), "r"(c_m + 3 * HALF_SIZE)
                              : "memory");
             }
         }
