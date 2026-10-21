@@ -2,7 +2,7 @@
 # Usage: vivado -mode batch -source program_fpga.tcl [-tclargs <path/to/bitstream.bit>]
 
 # Default: the newest bitstream saved by generate_bitstream.sh for this branch.
-set bitstream [lindex [lsort [glob -nocomplain /home/stasa/CMOS2/repos/VPU/fpga_results/vlen-192/20261016-164851_07212b0/xilinx_gr_heep_wrapper.bit]] end]
+set bitstream [lindex [lsort [glob -nocomplain /home/stasa/CMOS2/repos/VPU/fpga_results/vlen-32/*/xilinx_gr_heep_wrapper.bit]] end]
 if {$argc > 0} {
     set bitstream [lindex $argv 0]
 }

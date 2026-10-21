@@ -21,40 +21,41 @@
 #if GEMM_INPUT_BITS <= 8
 #define INPUT_WIDTH 8
 typedef int16_t acc_t;
-typedef vint16m1_t vacc_t;
-#define VSETVL(n)           __riscv_vsetvl_e16m1(n)
-#define VLE(p, vl)          __riscv_vle16_v_i16m1((const int16_t *)(p), vl)
-#define VSE(p, v, vl)       __riscv_vse16_v_i16m1(p, v, vl)
-#define VZERO(vl)           __riscv_vmv_v_x_i16m1(0, vl)
-#define VSLL(v, s, vl)      __riscv_vsll_vx_i16m1(v, s, vl)
-#define VAND(v, x, vl)      __riscv_vand_vx_i16m1(v, x, vl)
-#define VMULH(v, x, vl)     __riscv_vmulh_vx_i16m1(v, x, vl)
-#define VADD(a, b, vl)      __riscv_vadd_vv_i16m1(a, b, vl)
+#define VSEW                "e16"
+#define VLE                 "vle16.v"
+#define VSE                 "vse16.v"
 #define HIGH_HALF_MASK      ((acc_t)0xff00)
 #else
 #define INPUT_WIDTH 16
 typedef int32_t acc_t;
-typedef vint32m1_t vacc_t;
-#define VSETVL(n)           __riscv_vsetvl_e32m1(n)
-#define VLE(p, vl)          __riscv_vle32_v_i32m1((const int32_t *)(p), vl)
-#define VSE(p, v, vl)       __riscv_vse32_v_i32m1(p, v, vl)
-#define VZERO(vl)           __riscv_vmv_v_x_i32m1(0, vl)
-#define VSLL(v, s, vl)      __riscv_vsll_vx_i32m1(v, s, vl)
-#define VAND(v, x, vl)      __riscv_vand_vx_i32m1(v, x, vl)
-#define VMULH(v, x, vl)     __riscv_vmulh_vx_i32m1(v, x, vl)
-#define VADD(a, b, vl)      __riscv_vadd_vv_i32m1(a, b, vl)
+#define VSEW                "e32"
+#define VLE                 "vle32.v"
+#define VSE                 "vse32.v"
 #define HIGH_HALF_MASK      ((acc_t)0xffff0000)
 #endif
 
 #define A_SCALE_SHIFT (INPUT_WIDTH + 1 - GEMM_INPUT_BITS)
 #define HALF_SIZE     (GEMM_SIZE / 2)
-// Rows of C computed together, so each loaded and split B row is reused.
-#define ROW_BLOCK     4
+
+// At VLEN=32 a vector holds 2 e16 or 1 e32 column pair, so every row of C is
+// computed in HALF_SIZE / VEC_ELEMS strips.
+#define VLEN_BITS     32
+#define VEC_ELEMS     (VLEN_BITS / (2 * INPUT_WIDTH))
+// Rows of C computed together, so each loaded B strip is reused.
+#define ROW_BLOCK     2
+_Static_assert(HALF_SIZE % VEC_ELEMS == 0, "strips must tile the column pairs");
+_Static_assert(GEMM_SIZE % ROW_BLOCK == 0, "row blocks must tile C");
 
 // Results of the even and odd columns: C[m][2j] and C[m][2j+1].
 static acc_t vfu_even[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_interleaved")));
 static acc_t vfu_odd[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_interleaved")));
 static int32_t scalar_output[GEMM_SIZE * GEMM_SIZE];
+
+// B split once into its even and odd columns, already in the high half, and
+// A already scaled, so the inner loop is one load and a vmulh + vadd per row.
+static acc_t b_even[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_interleaved")));
+static acc_t b_odd[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_interleaved")));
+static int32_t a_scaled[GEMM_SIZE * GEMM_SIZE];
 
 // Keep GCC from specializing this call for the constant input arrays.
 static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_scalar(
@@ -73,43 +74,60 @@ static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_scalar(
     }
 }
 
-#define ROW_PRODUCTS(r)                                                    \
-    do {                                                                   \
-        acc_t a_k = (acc_t)(a[(m + r) * GEMM_SIZE + k] * (1 << A_SCALE_SHIFT)); \
-        acc_e##r = VADD(acc_e##r, VMULH(b_even, a_k, vl), vl);             \
-        acc_o##r = VADD(acc_o##r, VMULH(b_odd, a_k, vl), vl);              \
-    } while (0)
-
-#define ROW_STORE(r)                                                       \
-    do {                                                                   \
-        VSE(&c_even[(m + r) * HALF_SIZE + j], acc_e##r, vl);               \
-        VSE(&c_odd[(m + r) * HALF_SIZE + j], acc_o##r, vl);                \
-    } while (0)
-
-static void __attribute__((noipa)) gemm_vfu(
+// The kernel may use only the vector registers v0..v3, so it is written in
+// inline assembly with fixed registers instead of intrinsics, whose register
+// allocation GCC is free to choose. The registers keep their values from one
+// asm statement to the next: the function has no intrinsics and is not
+// autovectorized, so GCC emits no vector instructions of its own in between.
+//   v0: B strip   v1: product   v2, v3: accumulators of rows m and m + 1
+static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_vfu(
     const gemm_input_t *a, const gemm_input_t *b, acc_t *c_even, acc_t *c_odd)
 {
-    // Strip-mine the column pairs in case VLEN cannot hold all of them.
-    for (size_t j = 0, vl; j < HALF_SIZE; j += vl) {
-        vl = VSETVL(HALF_SIZE - j);
-        for (unsigned m = 0; m < GEMM_SIZE; m += ROW_BLOCK) {
-            vacc_t acc_e0 = VZERO(vl), acc_o0 = VZERO(vl);
-            vacc_t acc_e1 = VZERO(vl), acc_o1 = VZERO(vl);
-            vacc_t acc_e2 = VZERO(vl), acc_o2 = VZERO(vl);
-            vacc_t acc_e3 = VZERO(vl), acc_o3 = VZERO(vl);
-            for (unsigned k = 0; k < GEMM_SIZE; ++k) {
-                vacc_t b_pair = VLE(&b[k * GEMM_SIZE + 2 * j], vl);
-                vacc_t b_even = VSLL(b_pair, INPUT_WIDTH, vl);
-                vacc_t b_odd = VAND(b_pair, HIGH_HALF_MASK, vl);
-                ROW_PRODUCTS(0);
-                ROW_PRODUCTS(1);
-                ROW_PRODUCTS(2);
-                ROW_PRODUCTS(3);
+    asm volatile("vsetvli zero, %0, " VSEW ", m1, ta, ma" :: "r"(VEC_ELEMS));
+
+    // The column pairs of B rows are contiguous, so B is split in one pass.
+    const acc_t *b_pairs = (const acc_t *)b;
+    for (unsigned i = 0; i < GEMM_SIZE * HALF_SIZE; i += VEC_ELEMS)
+        asm volatile(VLE " v0, (%0)\n\t"
+                     "vsll.vi v1, v0, %3\n\t"
+                     VSE " v1, (%1)\n\t"
+                     "vand.vx v1, v0, %4\n\t"
+                     VSE " v1, (%2)"
+                     :: "r"(&b_pairs[i]), "r"(&b_even[i]), "r"(&b_odd[i]),
+                        "i"(INPUT_WIDTH), "r"(HIGH_HALF_MASK)
+                     : "v0", "v1", "memory");
+    for (unsigned i = 0; i < GEMM_SIZE * GEMM_SIZE; ++i)
+        a_scaled[i] = a[i] * (1 << A_SCALE_SHIFT);
+
+    for (unsigned parity = 0; parity < 2; ++parity) {
+        const acc_t *b_half = parity ? b_odd : b_even;
+        acc_t *c = parity ? c_odd : c_even;
+        for (unsigned j = 0; j < HALF_SIZE; j += VEC_ELEMS) {
+            for (unsigned m = 0; m < GEMM_SIZE; m += ROW_BLOCK) {
+                const int32_t *a0 = &a_scaled[m * GEMM_SIZE];
+                const int32_t *a1 = a0 + GEMM_SIZE;
+                const acc_t *b_k = &b_half[j];
+                // The first k sets the accumulators and the next ones add to them.
+                asm volatile(VLE " v0, (%0)\n\t"
+                             "vmulh.vx v2, v0, %1\n\t"
+                             "vmulh.vx v3, v0, %2"
+                             :: "r"(b_k), "r"(a0[0]), "r"(a1[0])
+                             : "v0", "v2", "v3", "memory");
+                for (unsigned k = 1; k < GEMM_SIZE; ++k) {
+                    b_k += HALF_SIZE;
+                    asm volatile(VLE " v0, (%0)\n\t"
+                                 "vmulh.vx v1, v0, %1\n\t"
+                                 "vadd.vv v2, v2, v1\n\t"
+                                 "vmulh.vx v1, v0, %2\n\t"
+                                 "vadd.vv v3, v3, v1"
+                                 :: "r"(b_k), "r"(a0[k]), "r"(a1[k])
+                                 : "v0", "v1", "v2", "v3", "memory");
+                }
+                asm volatile(VSE " v2, (%0)\n\t"
+                             VSE " v3, (%1)"
+                             :: "r"(&c[m * HALF_SIZE + j]), "r"(&c[(m + 1) * HALF_SIZE + j])
+                             : "memory");
             }
-            ROW_STORE(0);
-            ROW_STORE(1);
-            ROW_STORE(2);
-            ROW_STORE(3);
         }
     }
 }
@@ -129,6 +147,11 @@ static uint64_t cycles_now(void)
 // instructions VERMU does not implement (e.g. vlseg2e32.v, vmsne.vv, vsext.vf2).
 int __attribute__((optimize("no-tree-vectorize"))) main(void)
 {
+    unsigned vlen = (unsigned)__riscv_vsetvlmax_e8m1() * 8;
+    if (vlen != VLEN_BITS) {
+        printf("ERROR kernel built for vlen=%u, VPU has vlen=%u\n", VLEN_BITS, vlen);
+        return 1;
+    }
     for (unsigned i = 0; i < GEMM_SIZE * HALF_SIZE; ++i) {
         vfu_even[i] = (acc_t)0xa5a5a5a5u;
         vfu_odd[i] = (acc_t)0xa5a5a5a5u;
@@ -154,7 +177,6 @@ int __attribute__((optimize("no-tree-vectorize"))) main(void)
         vfu_errors += vfu_even[i] != scalar_expected[2 * i];
         vfu_errors += vfu_odd[i] != scalar_expected[2 * i + 1];
     }
-    unsigned vlen = (unsigned)__riscv_vsetvlmax_e8m1() * 8;
     unsigned speedup = vfu_cycles ? (unsigned)(scalar_cycles * 100 / vfu_cycles) : 0;
     printf("RESULT size=%u bits=%u container=%u vlen=%u "
            "scalar_cycles=0x%08x%08x vfu_cycles=0x%08x%08x "

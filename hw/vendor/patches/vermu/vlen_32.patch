@@ -1,5 +1,5 @@
 diff --git a/rtl/include/vpu_pkg.sv b/rtl/include/vpu_pkg.sv
-index a4755ec..182fba4 100644
+index a4755ec..110a8e7 100644
 --- a/rtl/include/vpu_pkg.sv
 +++ b/rtl/include/vpu_pkg.sv
 @@ -25,7 +25,7 @@ package vpu_pkg;
@@ -7,7 +7,7 @@ index a4755ec..182fba4 100644
      
      // Number of bits in a vector register (in each of 32 registers). Min 32. [STATIC]
 -    localparam int unsigned VLEN   = 128;
-+    localparam int unsigned VLEN   = 192;
++    localparam int unsigned VLEN   = 32;
      
      typedef logic [VLEN-1:0] vlen_t;                    
  
