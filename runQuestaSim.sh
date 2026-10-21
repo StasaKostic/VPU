@@ -8,7 +8,7 @@ cd /home/stasa/CMOS2/repos/VPU
 # Generate HDL files out of templates
 make mcu-gen
 # Compile the application
-make app PROJECT=rvv_matmul_bitwidth ARCH=rv32imc_zve32x_zvl128b
+make app PROJECT=gemm32-b8 ARCH=rv32imc_zve32x_zvl128b
 # Compile the HDL codes with QuestSim
 make questasim-build
 # Run simulation
