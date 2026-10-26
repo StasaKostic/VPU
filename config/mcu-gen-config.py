@@ -61,15 +61,16 @@ def config():
         )
     )
 
-    # Memory subsystem
-    # - 2 x 32kiB firmware and data
-    # - 2 x 16kiB interleaved banks
+    # Memory subsystem, the same as HEEPtor's for GEMM32
+    # - 32 + 32 + 32 + 16 kiB firmware and data, 64 kiB of it code, so that
+    #   the gemm32 kernels with A in their instructions fit
+    # - 4 x 4 kiB interleaved banks
     memory_ss = MemorySS()
-    memory_ss.add_ram_banks([32] * 2)
-    memory_ss.add_ram_banks_il(4, 16, "data_interleaved")
+    memory_ss.add_ram_banks([32, 32, 32, 16])
+    memory_ss.add_ram_banks_il(4, 4, "data_interleaved")
     # Linker script sections
-    memory_ss.add_linker_section(LinkerSection.by_size("code", 0, 0x00008000))
-    memory_ss.add_linker_section(LinkerSection("data", 0x00008000, None))
+    memory_ss.add_linker_section(LinkerSection.by_size("code", 0, 0x10000))
+    memory_ss.add_linker_section(LinkerSection("data", 0x10000, None))
     system.set_memory_ss(memory_ss)
 
     # Peripheral domains initialization
