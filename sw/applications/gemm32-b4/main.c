@@ -69,11 +69,13 @@ static acc_t vfu_odd[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_
 static int32_t scalar_output[GEMM_SIZE * GEMM_SIZE];
 
 // B split once into its even and odd columns, already in the high half, and
-// A transposed and already scaled: the head loads a B strip and takes A from
-// 4 scalar loads, the tail loads an A strip and takes B from 4 scalar loads.
+// A transposed and already scaled (a_t, laid out offline from data.h by
+// scripts/gen_gemm32_a.py, like HEEPtor lays out its inputs): the head loads
+// a B strip and takes A from 4 scalar loads, the tail loads an A strip and
+// takes B from 4 scalar loads.
 static acc_t b_even[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_interleaved")));
 static acc_t b_odd[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_interleaved")));
-static acc_t a_t[GEMM_SIZE * GEMM_SIZE] __attribute__((section(".xheep_data_interleaved")));
+#include "a_t.h"
 
 // Keep GCC from specializing this call for the constant input arrays.
 static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_scalar(
@@ -134,7 +136,7 @@ static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_scalar(
 //   head: v0: B strip   v1: product   v2..v5: accumulators of rows m..m + 3
 //   tail: v0: A strip   v1: product   v2..v5: accumulators of columns 2j..2j + 3
 static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_vfu(
-    const gemm_input_t *a, const gemm_input_t *b, acc_t *c_even, acc_t *c_odd)
+    const gemm_input_t *b, acc_t *c_even, acc_t *c_odd)
 {
     // The column pairs of B rows are contiguous, so B is split in one pass.
     const acc_t *b_pairs = (const acc_t *)b;
@@ -149,9 +151,6 @@ static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_vfu(
                         "i"(INPUT_WIDTH), "r"(HIGH_HALF_MASK)
                      : "v0", "v1", "memory");
     }
-    for (unsigned m = 0; m < GEMM_SIZE; ++m)
-        for (unsigned k = 0; k < GEMM_SIZE; ++k)
-            a_t[k * GEMM_SIZE + m] = (acc_t)(a[m * GEMM_SIZE + k] * (1 << A_SCALE_SHIFT));
 
     // Head: pairs 0..HEAD_PAIRS-1 of rows m..m + 3, A[m + r][k] = a_k[r].
     unsigned vl;
@@ -226,7 +225,7 @@ int __attribute__((optimize("no-tree-vectorize"))) main(void)
     uint64_t scalar_cycles = cycles_now() - start;
 
     start = cycles_now();
-    gemm_vfu(scalar_a, scalar_b, vfu_even, vfu_odd);
+    gemm_vfu(scalar_b, vfu_even, vfu_odd);
 
     // Include the final store and its readback in the measured region.
     asm volatile("fence iorw, iorw" ::: "memory");
