@@ -3,6 +3,20 @@
 // SPDX-License-Identifier: Apache-2.0 WITH SHL-2.1
 // Ane Corral (ane.corral@upm.es)
 
+`ifndef SYNTHESIS
+interface vpu_debug_if
+  import vpu_pkg::*;
+  import vector_ops_pkg::*;
+;
+    op_e          operation;
+    logic [VLEN-1:0] rdata1;
+    logic [VLEN-1:0] vrf_rdata2;
+    logic [VLEN-1:0] vrf_vd_data;
+    logic [VLEN-1:0] result;
+    logic simd_result_valid;
+endinterface
+`endif
+
 module vpu_top
  import rvv_instr_pkg::*;
  import vpu_pkg::*;
@@ -12,18 +26,18 @@ module vpu_top
     // CVXIF Types
     parameter  int unsigned NrRgprPorts         = 2,
     parameter  int unsigned XLEN                = 32,
-    parameter  type         readregflags_t      = logic,
-    parameter  type         writeregflags_t     = logic,
-    parameter  type         id_t                = logic,
-    parameter  type         hartid_t            = logic,
-    parameter  type         x_issue_req_t       = logic,
-    parameter  type         x_issue_resp_t      = logic,
-    parameter  type         x_register_t        = logic,
-    parameter  type         x_commit_t          = logic,
-    parameter  type         x_result_t          = logic,
+    parameter  type         readregflags_t      = cvxif_types_pkg::readregflags_t,
+    parameter  type         writeregflags_t     = cvxif_types_pkg::writeregflags_t,
+    parameter  type         id_t                = cvxif_types_pkg::id_t,
+    parameter  type         hartid_t            = cvxif_types_pkg::hartid_t,
+    parameter  type         x_issue_req_t       = cvxif_types_pkg::x_issue_req_t,
+    parameter  type         x_issue_resp_t      = cvxif_types_pkg::x_issue_resp_t,
+    parameter  type         x_register_t        = cvxif_types_pkg::x_register_t,
+    parameter  type         x_commit_t          = cvxif_types_pkg::x_commit_t,
+    parameter  type         x_result_t          = cvxif_types_pkg::x_result_t,
     localparam type         registers_t         = logic [NrRgprPorts-1:0][XLEN-1:0],
-    parameter  type         obi_req_t           = logic,
-    parameter  type         obi_resp_t          = logic,
+    parameter  type         obi_req_t           = obi_pkg::obi_req_t,
+    parameter  type         obi_resp_t          = obi_pkg::obi_resp_t,
     parameter  int unsigned EXT_XBAR_NMASTER    = 1
     
     ) ( 
@@ -106,15 +120,6 @@ module vpu_top
   logic vmv_active;
   logic waiting_for_done;
   logic vrf_we_d;
-
-  interface vpu_debug_if;
-      op_e          operation;
-      logic [VLEN-1:0] rdata1;
-      logic [VLEN-1:0] vrf_rdata2;
-      logic [VLEN-1:0] vrf_vd_data;
-      logic [VLEN-1:0] result; 
-      logic simd_result_valid;
-  endinterface
 
 ////////////////////////
 
@@ -422,6 +427,7 @@ module vpu_top
   end
 
   //Verification tb_vpu_top.sv
+`ifndef SYNTHESIS
   vpu_debug_if debug_if();
 
   assign debug_if.operation         = operation;
@@ -430,5 +436,6 @@ module vpu_top
   assign debug_if.result            = wdata;
   assign debug_if.vrf_vd_data       = vrf_vd_data;
   assign debug_if.simd_result_valid = simd_result_valid;
-  
+`endif
+
 endmodule
