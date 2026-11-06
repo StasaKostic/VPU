@@ -53,10 +53,12 @@ static acc_t vfu_odd[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_
 static int32_t scalar_output[GEMM_SIZE * GEMM_SIZE];
 
 // B split once into its even and odd columns, already in the high half, and
-// A already scaled, so the inner loop is one load and a vmulh + vadd per row.
+// A transposed and already scaled (a_t, laid out offline from data.h by
+// scripts/gen_gemm32_a.py, like HEEPtor lays out its inputs), so the inner
+// loop is one load and a vmulh + vadd per row.
 static acc_t b_even[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_interleaved")));
 static acc_t b_odd[GEMM_SIZE * HALF_SIZE] __attribute__((section(".xheep_data_interleaved")));
-static int32_t a_scaled[GEMM_SIZE * GEMM_SIZE];
+#include "a_t.h"
 
 // Keep GCC from specializing this call for the constant input arrays.
 static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_scalar(
@@ -82,7 +84,7 @@ static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_scalar(
 // autovectorized, so GCC emits no vector instructions of its own in between.
 //   v0: B strip   v1: product   v2..v5: accumulators of rows m..m + 3
 static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_vfu(
-    const gemm_input_t *a, const gemm_input_t *b, acc_t *c_even, acc_t *c_odd)
+    const gemm_input_t *b, acc_t *c_even, acc_t *c_odd)
 {
     asm volatile("vsetvli zero, %0, " VSEW ", m1, ta, ma" :: "r"(VEC_ELEMS));
 
@@ -97,18 +99,14 @@ static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_vfu(
                      :: "r"(&b_pairs[i]), "r"(&b_even[i]), "r"(&b_odd[i]),
                         "i"(INPUT_WIDTH), "r"(HIGH_HALF_MASK)
                      : "v0", "v1", "memory");
-    for (unsigned i = 0; i < GEMM_SIZE * GEMM_SIZE; ++i)
-        a_scaled[i] = a[i] * (1 << A_SCALE_SHIFT);
 
     for (unsigned parity = 0; parity < 2; ++parity) {
         const acc_t *b_half = parity ? b_odd : b_even;
         acc_t *c = parity ? c_odd : c_even;
         for (unsigned j = 0; j < HALF_SIZE; j += VEC_ELEMS) {
             for (unsigned m = 0; m < GEMM_SIZE; m += ROW_BLOCK) {
-                const int32_t *a0 = &a_scaled[m * GEMM_SIZE];
-                const int32_t *a1 = a0 + GEMM_SIZE;
-                const int32_t *a2 = a1 + GEMM_SIZE;
-                const int32_t *a3 = a2 + GEMM_SIZE;
+                // A[m + r][k] = a_k[r]
+                const acc_t *a_k = &a_t[m];
                 const acc_t *b_k = &b_half[j];
                 // The first k sets the accumulators and the next ones add to them.
                 asm volatile(VLE " v0, (%0)\n\t"
@@ -116,9 +114,10 @@ static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_vfu(
                              "vmulh.vx v3, v0, %2\n\t"
                              "vmulh.vx v4, v0, %3\n\t"
                              "vmulh.vx v5, v0, %4"
-                             :: "r"(b_k), "r"(a0[0]), "r"(a1[0]), "r"(a2[0]), "r"(a3[0])
+                             :: "r"(b_k), "r"(a_k[0]), "r"(a_k[1]), "r"(a_k[2]), "r"(a_k[3])
                              : "v0", "v2", "v3", "v4", "v5", "memory");
                 for (unsigned k = 1; k < GEMM_SIZE; ++k) {
+                    a_k += GEMM_SIZE;
                     b_k += HALF_SIZE;
                     asm volatile(VLE " v0, (%0)\n\t"
                                  "vmulh.vx v1, v0, %1\n\t"
@@ -129,7 +128,7 @@ static void __attribute__((noipa, optimize("no-tree-vectorize"))) gemm_vfu(
                                  "vadd.vv v4, v4, v1\n\t"
                                  "vmulh.vx v1, v0, %4\n\t"
                                  "vadd.vv v5, v5, v1"
-                                 :: "r"(b_k), "r"(a0[k]), "r"(a1[k]), "r"(a2[k]), "r"(a3[k])
+                                 :: "r"(b_k), "r"(a_k[0]), "r"(a_k[1]), "r"(a_k[2]), "r"(a_k[3])
                                  : "v0", "v1", "v2", "v3", "v4", "v5", "memory");
                 }
                 acc_t *c_m = &c[m * HALF_SIZE + j];
@@ -175,7 +174,7 @@ int __attribute__((optimize("no-tree-vectorize"))) main(void)
     uint64_t scalar_cycles = cycles_now() - start;
 
     start = cycles_now();
-    gemm_vfu(scalar_a, scalar_b, vfu_even, vfu_odd);
+    gemm_vfu(scalar_b, vfu_even, vfu_odd);
 
     // Include the final store and its readback in the measured region.
     asm volatile("fence iorw, iorw" ::: "memory");
