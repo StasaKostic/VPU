@@ -45,20 +45,13 @@ module vregfile
 
     int sew_bits;
     int elem_idx;
-    int   bytes_per_elem;
+    int bytes_per_elem;
     vlen_t active_vl;
 
     always_ff @(posedge clk_i or negedge rst_ni) begin
         if (!rst_ni) begin
             vreg           <= '0;
             done_w_o       <= '0;
-            bytes_per_elem <= '0;
-            prestart       <= '0;
-            body           <= '0;
-            tail           <= '0;
-            active         <= '0;
-            inactive       <= '0;
-            mask_bit       <= '0;
         end else begin
             done_w_o <= 1'b0;
             if (we_i && waddr_i < NRVREG && op_valid_i) begin
